@@ -1,0 +1,111 @@
+const express = require("express");
+const app = express();
+const cors = require("cors");
+const { MongoClient, ServerApiVersion } = require("mongodb");
+const dotenv = require("dotenv").config();
+const port = process.env.PORT || 8000;
+
+app.use(cors());
+app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
+
+const uri = `mongodb+srv://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@cluster0.a82ocix.mongodb.net/?appName=Cluster0`;
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+
+async function run() {
+  try {
+    await client.connect();
+
+    const db = client.db("medicare");
+    const userCollection = db.collection("user");
+    const doctorCollection = db.collection("doctors");
+
+    // GET REQUESTS
+
+    // get doctor data by email
+    app.get("/api/doctor", async (req, res) => {
+      const { email } = req.query;
+      const result = await doctorCollection.findOne({ doctorEmail: email });
+      res.json(result);
+    });
+
+    // POST REQUESTS
+
+    // store doctor data after register
+    app.post("/api/doctors", async (req, res) => {
+      const newData = req.body;
+      const doctorData = {
+        createdAt: new Date(),
+        doctorName: newData.fullName,
+        doctorEmail: newData.email,
+        specialization: "",
+        qualifications: "",
+        consultationFee: "",
+        hospitalName: "",
+        profileImage: newData.image,
+        availableDays: [],
+        availableSlots: [],
+        experience: "",
+        phone: newData.phone,
+        bio: "",
+        verificationStatus: "approved",
+      };
+      const result = await doctorCollection.insertOne(doctorData);
+      res.json(result);
+    });
+
+    // PATCH REQUESTS
+
+    // edit doctor data
+    app.patch("/api/doctor/profile/edit", async (req, res) => {
+      const newData = req.body;
+      const {
+        qualifications,
+        consultationFee,
+        hospitalName,
+        specialization,
+        phone,
+        bio,
+        experience,
+      } = newData;
+      const filter = await doctorCollection.findOne({
+        doctorEmail: newData.email,
+      });
+      const updatedData = {
+        $set: {
+          qualifications,
+          consultationFee,
+          hospitalName,
+          specialization,
+          phone,
+          bio,
+          experience,
+        },
+      };
+      const result = await doctorCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
+    await client.db("admin").command({ ping: 1 });
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!",
+    );
+  } finally {
+    // await client.close();
+  }
+}
+run().catch(console.dir);
+
+app.listen(port, () => {
+  console.log(`Server is flying on port ${port}`);
+});
