@@ -46,6 +46,7 @@ async function run() {
       const newData = req.body;
       const doctorData = {
         createdAt: new Date(),
+        updatedAt: new Date(),
         doctorName: newData.fullName,
         doctorEmail: newData.email,
         specialization: "",
@@ -77,21 +78,39 @@ async function run() {
         phone,
         bio,
         experience,
+        availableDays,
+        availableSlots,
       } = newData;
-      const filter = await doctorCollection.findOne({
-        doctorEmail: newData.email,
-      });
-      const updatedData = {
-        $set: {
-          qualifications,
-          consultationFee,
-          hospitalName,
-          specialization,
-          phone,
-          bio,
-          experience,
-        },
+      const profileData = {
+        qualifications,
+        consultationFee,
+        hospitalName,
+        specialization,
+        phone,
+        bio,
+        experience,
       };
+      const scheduleData = {
+        availableDays,
+        availableSlots,
+      };
+      const filter = { doctorEmail: newData.email };
+      let updatedData;
+      if (typeof availableDays !== "undefined") {
+        updatedData = {
+          $set: {
+            ...scheduleData,
+            updatedAt: new Date(),
+          },
+        };
+      } else {
+        updatedData = {
+          $set: {
+            ...profileData,
+            updatedAt: new Date(),
+          },
+        };
+      }
       const result = await doctorCollection.updateOne(filter, updatedData);
       res.json(result);
     });
