@@ -172,6 +172,35 @@ async function run() {
       res.json(result);
     });
 
+    // cancelling appointment
+
+    app.patch("/api/appointment/cancel", async (req, res) => {
+      const { appointmentId } = req.query;
+      const filter = { _id: new ObjectId(appointmentId) };
+      const updatedData = {
+        $set: {
+          appointmentStatus: "cancelled",
+        },
+      };
+      const result = await appointmentCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
+    // rescheduling appointment
+
+    app.patch("/api/appointment/reschedule", async (req, res) => {
+      const { appointmentDate, appointmentTime, appointmentId } = req.body;
+      const filter = { _id: new ObjectId(appointmentId) };
+      const updatedData = {
+        $set: {
+          appointmentDate,
+          appointmentTime,
+        },
+      };
+      const result = await appointmentCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
