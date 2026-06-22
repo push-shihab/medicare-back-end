@@ -61,6 +61,13 @@ async function run() {
       res.json(result);
     });
 
+    // get payment history by id
+    app.get("/api/payments", async (req, res) => {
+      const { patientId } = req.query;
+      const result = await paymentCollection.find({ patientId }).toArray();
+      res.json(result);
+    });
+
     // POST REQUESTS
 
     // store doctor data after register
@@ -92,6 +99,27 @@ async function run() {
       const data = req.body;
       const result = await appointmentCollection.insertOne(data);
       res.json(result);
+    });
+
+    // creating payments
+    app.post("/api/payment", async (req, res) => {
+      const data = req.body;
+      const result = await paymentCollection.insertOne(data);
+      if (result) {
+        const findAppointment = { _id: new ObjectId(data.appointmentId) };
+        const updatePaymentStatus = {
+          $set: {
+            paymentStatus: "paid",
+          },
+        };
+        const update = await appointmentCollection.updateOne(
+          findAppointment,
+          updatePaymentStatus,
+        );
+        if (update) {
+          res.json(result);
+        }
+      }
     });
 
     // PATCH REQUESTS
