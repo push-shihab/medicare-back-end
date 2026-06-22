@@ -31,6 +31,7 @@ async function run() {
     const doctorCollection = db.collection("doctors");
     const appointmentCollection = db.collection("appointments");
     const paymentCollection = db.collection("payments");
+    const reviewCollection = db.collection("reviews");
 
     // GET REQUESTS
 
@@ -65,6 +66,13 @@ async function run() {
     app.get("/api/payments", async (req, res) => {
       const { patientId } = req.query;
       const result = await paymentCollection.find({ patientId }).toArray();
+      res.json(result);
+    });
+
+    // get reviews for specific patient
+    app.get("/api/review/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await reviewCollection.find({ patientId: id }).toArray();
       res.json(result);
     });
 
@@ -122,7 +130,35 @@ async function run() {
       }
     });
 
+    // creating review
+    app.post("/api/review/new", async (req, res) => {
+      const data = req.body;
+      const review = {
+        ...data,
+        createdAt: new Date(),
+      };
+      const result = await reviewCollection.insertOne(review);
+      res.json(result);
+    });
+
     // PATCH REQUESTS
+
+    // updating user data
+    app.patch("/api/user/profile", async (req, res) => {
+      const { userId, name, email, image, phone } = req.body;
+      const filter = { _id: new ObjectId(userId) };
+      const updatedData = {
+        $set: {
+          name,
+          email,
+          image,
+          phone,
+          updatedAt: new Date(),
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
 
     // edit doctor data
     app.patch("/api/doctor/profile/edit", async (req, res) => {
@@ -198,6 +234,31 @@ async function run() {
         },
       };
       const result = await appointmentCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
+    // editing review
+    app.patch("/api/review/edit", async (req, res) => {
+      const { rating, reviewText, reviewId } = req.body;
+      const filter = { _id: new ObjectId(reviewId) };
+      const updatedData = {
+        $set: {
+          rating,
+          reviewText,
+        },
+      };
+      const result = await reviewCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
+    // DELETE REQUESTS
+
+    // delete review
+    app.delete("/api/review/delete", async (req, res) => {
+      const { reviewId } = req.body;
+      const result = await reviewCollection.deleteOne({
+        _id: new ObjectId(reviewId),
+      });
       res.json(result);
     });
 
