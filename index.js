@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const dotenv = require("dotenv").config();
 const port = process.env.PORT || 8000;
 
@@ -29,13 +29,35 @@ async function run() {
     const db = client.db("medicare");
     const userCollection = db.collection("user");
     const doctorCollection = db.collection("doctors");
+    const appointmentCollection = db.collection("appointments");
+    const paymentCollection = db.collection("payments");
 
     // GET REQUESTS
+
+    // get all doctors
+    app.get("/api/all-doctors", async (req, res) => {
+      const result = await doctorCollection.find().toArray();
+      res.json(result);
+    });
 
     // get doctor data by email
     app.get("/api/doctor", async (req, res) => {
       const { email } = req.query;
       const result = await doctorCollection.findOne({ doctorEmail: email });
+      res.json(result);
+    });
+
+    // get doctor data by id
+    app.get("/api/doctor/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await doctorCollection.findOne({ _id: new ObjectId(id) });
+      res.json(result);
+    });
+
+    // get all appointments made by individual patient
+    app.get("/api/appointment/self", async (req, res) => {
+      const { patientId } = req.query;
+      const result = await appointmentCollection.find({ patientId }).toArray();
       res.json(result);
     });
 
@@ -62,6 +84,13 @@ async function run() {
         verificationStatus: "approved",
       };
       const result = await doctorCollection.insertOne(doctorData);
+      res.json(result);
+    });
+
+    // creating appointment
+    app.post("/api/appointment", async (req, res) => {
+      const data = req.body;
+      const result = await appointmentCollection.insertOne(data);
       res.json(result);
     });
 
