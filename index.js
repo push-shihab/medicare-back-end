@@ -32,6 +32,7 @@ async function run() {
     const appointmentCollection = db.collection("appointments");
     const paymentCollection = db.collection("payments");
     const reviewCollection = db.collection("reviews");
+    const prescriptionCollection = db.collection("prescriptions");
 
     // GET REQUESTS
 
@@ -73,6 +74,42 @@ async function run() {
     app.get("/api/review/:id", async (req, res) => {
       const { id } = req.params;
       const result = await reviewCollection.find({ patientId: id }).toArray();
+      res.json(result);
+    });
+
+    // get reviews for specific doctor
+    app.get("/api/review", async (req, res) => {
+      const { email } = req.query;
+      const getDoctorId = await doctorCollection.findOne({
+        doctorEmail: email,
+      });
+      const result = await reviewCollection
+        .find({ doctorId: getDoctorId._id.toString() })
+        .toArray();
+      res.json(result);
+    });
+
+    // get appointments by doctor id
+    app.get("/api/appointment", async (req, res) => {
+      const { email } = req.query;
+      const getDoctorId = await doctorCollection.findOne({
+        doctorEmail: email,
+      });
+      const result = await appointmentCollection
+        .find({ doctorId: getDoctorId._id.toString() })
+        .toArray();
+      res.json(result);
+    });
+
+    // gettign prescription by doctor id
+    app.get("/api/prescription", async (req, res) => {
+      const { email } = req.query;
+      const getDoctorId = await doctorCollection.findOne({
+        doctorEmail: email,
+      });
+      const result = await prescriptionCollection
+        .find({ doctorId: getDoctorId._id.toString() })
+        .toArray();
       res.json(result);
     });
 
@@ -138,6 +175,29 @@ async function run() {
         createdAt: new Date(),
       };
       const result = await reviewCollection.insertOne(review);
+      res.json(result);
+    });
+
+    // creating prescription
+    app.post("/api/prescription/new", async (req, res) => {
+      const data = req.body;
+      const review = {
+        ...data,
+        createdAt: new Date(),
+      };
+      const result = await prescriptionCollection.insertOne(review);
+      if (result) {
+        const filter = { _id: new ObjectId(data.appointmentId) };
+        const updatedField = {
+          $set: {
+            appointmentStatus: "completed",
+          },
+        };
+        const update = await appointmentCollection.updateOne(
+          filter,
+          updatedField,
+        );
+      }
       res.json(result);
     });
 
@@ -208,6 +268,19 @@ async function run() {
       res.json(result);
     });
 
+    // accepting appointment by doctor
+    app.patch("/api/appointment/accept", async (req, res) => {
+      const { appointmentId } = req.query;
+      const filter = { _id: new ObjectId(appointmentId) };
+      const updatedData = {
+        $set: {
+          appointmentStatus: "confirmed",
+        },
+      };
+      const result = await appointmentCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
     // cancelling appointment
 
     app.patch("/api/appointment/cancel", async (req, res) => {
@@ -248,6 +321,24 @@ async function run() {
         },
       };
       const result = await reviewCollection.updateOne(filter, updatedData);
+      res.json(result);
+    });
+
+    // modify prescription
+    app.patch("/api/prescription/modify", async (req, res) => {
+      const { diagnosis, medications, instructions, prescriptionId } = req.body;
+      const filter = { _id: new ObjectId(prescriptionId) };
+      const updatedField = {
+        $set: {
+          diagnosis,
+          medications,
+          instructions,
+        },
+      };
+      const result = await prescriptionCollection.updateOne(
+        filter,
+        updatedField,
+      );
       res.json(result);
     });
 
