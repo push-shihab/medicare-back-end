@@ -107,6 +107,12 @@ async function run() {
       res.json(result);
     });
 
+    // get all appoitments
+    app.get("/api/appointments", async (req, res) => {
+      const result = await appointmentCollection.find().toArray();
+      res.json(result);
+    });
+
     // gettign prescription by doctor id
     app.get("/api/prescription", async (req, res) => {
       const { email } = req.query;
@@ -139,7 +145,7 @@ async function run() {
         experience: "",
         phone: newData.phone,
         bio: "",
-        verificationStatus: "approved",
+        verificationStatus: "pending",
       };
       const result = await doctorCollection.insertOne(doctorData);
       res.json(result);
@@ -383,6 +389,45 @@ async function run() {
       res.json(result);
     });
 
+    // rejecting a doctor
+    app.patch("/api/doctor/reject", async (req, res) => {
+      const { doctorId } = req.body;
+      const filter = { _id: new ObjectId(doctorId) };
+      const updatedField = {
+        $set: {
+          verificationStatus: "rejected",
+        },
+      };
+      const result = await doctorCollection.updateOne(filter, updatedField);
+      res.json(result);
+    });
+
+    // cancelling a doctor
+    app.patch("/api/doctor/cancel", async (req, res) => {
+      const { doctorId } = req.body;
+      const filter = { _id: new ObjectId(doctorId) };
+      const updatedField = {
+        $set: {
+          verificationStatus: "cancelled",
+        },
+      };
+      const result = await doctorCollection.updateOne(filter, updatedField);
+      res.json(result);
+    });
+
+    // approving a doctor
+    app.patch("/api/doctor/approve", async (req, res) => {
+      const { doctorId } = req.body;
+      const filter = { _id: new ObjectId(doctorId) };
+      const updatedField = {
+        $set: {
+          verificationStatus: "approved",
+        },
+      };
+      const result = await doctorCollection.updateOne(filter, updatedField);
+      res.json(result);
+    });
+
     // DELETE REQUESTS
 
     // delete review
@@ -396,7 +441,16 @@ async function run() {
 
     // delete user
     app.delete("/api/user/delete", async (req, res) => {
-      const { userId } = req.body;
+      const { userId, userEmail } = req.body;
+      // delete user from doctorCollection if role === doctor
+      const findUserInUserCollection = await userCollection.findOne({
+        _id: new ObjectId(userId),
+      });
+      if (findUserInUserCollection.role === "doctor") {
+        const deleteUserFromDoctorCollection = await doctorCollection.deleteOne(
+          { doctorEmail: userEmail },
+        );
+      }
       const result = await userCollection.deleteOne({
         _id: new ObjectId(userId),
       });
