@@ -36,6 +36,12 @@ async function run() {
 
     // GET REQUESTS
 
+    // getting all users
+    app.get("/api/users", async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.json(result);
+    });
+
     // get all doctors
     app.get("/api/all-doctors", async (req, res) => {
       const result = await doctorCollection.find().toArray();
@@ -142,6 +148,15 @@ async function run() {
     // creating appointment
     app.post("/api/appointment", async (req, res) => {
       const data = req.body;
+      const isConfirmed = await appointmentCollection.findOne({
+        doctorId: data.doctorId,
+        appointmentDate: data.appointmentDate,
+        appointmentTime: data.appointmentTime,
+        appointmentStatus: "confirmed",
+      });
+      if (isConfirmed) {
+        return res.json({ message: "Slot is already booked, try other slots" });
+      }
       const result = await appointmentCollection.insertOne(data);
       res.json(result);
     });
@@ -342,6 +357,32 @@ async function run() {
       res.json(result);
     });
 
+    // suspend user
+    app.patch("/api/user/suspend", async (req, res) => {
+      const { userId } = req.body;
+      const filter = { _id: new ObjectId(userId) };
+      const updatedField = {
+        $set: {
+          status: "suspended",
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedField);
+      res.json(result);
+    });
+
+    // unsuspend user
+    app.patch("/api/user/unsuspend", async (req, res) => {
+      const { userId } = req.body;
+      const filter = { _id: new ObjectId(userId) };
+      const updatedField = {
+        $set: {
+          status: "active",
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedField);
+      res.json(result);
+    });
+
     // DELETE REQUESTS
 
     // delete review
@@ -349,6 +390,15 @@ async function run() {
       const { reviewId } = req.body;
       const result = await reviewCollection.deleteOne({
         _id: new ObjectId(reviewId),
+      });
+      res.json(result);
+    });
+
+    // delete user
+    app.delete("/api/user/delete", async (req, res) => {
+      const { userId } = req.body;
+      const result = await userCollection.deleteOne({
+        _id: new ObjectId(userId),
       });
       res.json(result);
     });
