@@ -28,9 +28,9 @@ async function run() {
 
     const db = client.db("medicare");
     const userCollection = db.collection("user");
+    const paymentCollection = db.collection("payments");
     const doctorCollection = db.collection("doctors");
     const appointmentCollection = db.collection("appointments");
-    const paymentCollection = db.collection("payments");
     const reviewCollection = db.collection("reviews");
     const prescriptionCollection = db.collection("prescriptions");
 
@@ -69,22 +69,65 @@ async function run() {
       res.json(result);
     });
 
-    // get payment history by id
+    // get payments by patient id
     app.get("/api/payments", async (req, res) => {
       const { patientId } = req.query;
       const result = await paymentCollection.find({ patientId }).toArray();
       res.json(result);
     });
 
+    // get payment history by id
+    app.get("/api/all-payments", async (req, res) => {
+      const result = await paymentCollection
+        .aggregate([
+          {
+            $addFields: {
+              patientIdObj: { $toObjectId: "$patientId" },
+            },
+          },
+          {
+            $lookup: {
+              from: "user",
+              localField: "patientIdObj",
+              foreignField: "_id",
+              as: "patientInfo",
+            },
+          },
+          { $unwind: "$patientInfo" },
+          {
+            $replaceRoot: {
+              newRoot: {
+                $mergeObjects: ["$$ROOT", { patientName: "$patientInfo.name" }],
+              },
+            },
+          },
+          {
+            $project: {
+              patientInfo: 0,
+              patientIdObj: 0,
+            },
+          },
+        ])
+        .toArray();
+
+      res.json(result);
+    });
+
     // get reviews for specific patient
-    app.get("/api/review/:id", async (req, res) => {
-      const { id } = req.params;
+    app.get("/api/review", async (req, res) => {
+      const { id } = req.query;
       const result = await reviewCollection.find({ patientId: id }).toArray();
       res.json(result);
     });
 
+    // get all reviews
+    app.get("/api/all-reviews", async (req, res) => {
+      const result = await reviewCollection.find().toArray();
+      res.json(result);
+    });
+
     // get reviews for specific doctor
-    app.get("/api/review", async (req, res) => {
+    app.get("/api/review/doctor", async (req, res) => {
       const { email } = req.query;
       const getDoctorId = await doctorCollection.findOne({
         doctorEmail: email,
@@ -92,7 +135,20 @@ async function run() {
       const result = await reviewCollection
         .find({ doctorId: getDoctorId._id.toString() })
         .toArray();
-      res.json(result);
+      const avgRatingInReview =
+        result.reduce((acc, review) => acc + Number(review.rating), 0) /
+        result.length;
+      const filter = { _id: getDoctorId._id };
+      const updatedField = {
+        $set: {
+          rating: avgRatingInReview.toFixed(2),
+        },
+      };
+      const updateRatingInDoctorCollecetion = await doctorCollection.updateOne(
+        filter,
+        updatedField,
+      );
+      res.json({ result, avgRatingInReview });
     });
 
     // get appointments by doctor id
@@ -146,6 +202,7 @@ async function run() {
         phone: newData.phone,
         bio: "",
         verificationStatus: "pending",
+        rating: 0,
       };
       const result = await doctorCollection.insertOne(doctorData);
       res.json(result);
@@ -196,6 +253,22 @@ async function run() {
         createdAt: new Date(),
       };
       const result = await reviewCollection.insertOne(review);
+      const getRatingFromReview = await reviewCollection.findOne({
+        _id: result.insertedId,
+      });
+      const filter = { _id: new ObjectId(data.doctorId) };
+      const isRating = await doctorCollection.findOne(filter);
+      if (isRating.rating === 0) {
+        const updatedField = {
+          $set: {
+            rating: Number(getRatingFromReview.rating),
+          },
+        };
+        const setRatingInDoctorCollection = await doctorCollection.updateOne(
+          filter,
+          updatedField,
+        );
+      }
       res.json(result);
     });
 
