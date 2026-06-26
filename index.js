@@ -44,6 +44,70 @@ async function run() {
 
     // get all doctors
     app.get("/api/all-doctors", async (req, res) => {
+      const matchStage = {};
+
+      if (req.query.specialization) {
+        matchStage.specialization = req.query.specialization;
+      }
+
+      if (req.query.search) {
+        matchStage.$or = [
+          { doctorName: { $regex: req.query.search, $options: "i" } },
+          { specialization: { $regex: req.query.search, $options: "i" } },
+        ];
+      }
+
+      const pipeline = [
+        { $match: matchStage },
+        {
+          $addFields: {
+            consultationFeeNum: { $toDouble: "$consultationFee" },
+            experienceNum: { $toDouble: "$experience" },
+            ratingNum: { $toDouble: "$rating" },
+          },
+        },
+      ];
+
+      let sortStage = {};
+      switch (req.query.sortBy) {
+        case "price-low-high":
+          sortStage = { consultationFeeNum: 1 };
+          break;
+        case "price-high-low":
+          sortStage = { consultationFeeNum: -1 };
+          break;
+        case "experience":
+          sortStage = { experienceNum: -1 };
+          break;
+        case "rating":
+          sortStage = { ratingNum: -1 };
+          break;
+      }
+
+      if (Object.keys(sortStage).length > 0) {
+        pipeline.push({ $sort: sortStage });
+      }
+
+      // pagination
+      if (req.query.page) {
+        const page = req.query.page;
+        const itemsPerPage = req.query.itemsPerPage || 12;
+        const skipPage = (page - 1) * itemsPerPage;
+        const totalDoctor = await doctorCollection.countDocuments(matchStage);
+        const paginationResult = await doctorCollection
+          .aggregate(pipeline)
+          .skip(skipPage)
+          .limit(itemsPerPage)
+          .toArray();
+        return res.json({ paginationResult, totalDoctor });
+      }
+
+      const result = await doctorCollection.aggregate(pipeline).toArray();
+      res.json(result);
+    });
+
+    // get all doctors for admin
+    app.get("/api/all-doctors/admin", async (req, res) => {
       const result = await doctorCollection.find().toArray();
       res.json(result);
     });
