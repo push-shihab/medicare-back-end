@@ -33,17 +33,68 @@ async function run() {
     const appointmentCollection = db.collection("appointments");
     const reviewCollection = db.collection("reviews");
     const prescriptionCollection = db.collection("prescriptions");
+    const sessionCollection = db.collection("session");
+
+    // JWT
+
+    const verifyToken = async (req, res, next) => {
+      const authHeader = req.headers?.authorization;
+      if (!authHeader) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const userSession = await sessionCollection.findOne({ token });
+      if (!userSession) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await userCollection.findOne({ _id: userSession.userId });
+      if (!user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      req.user = user;
+
+      next();
+    };
+
+    const isAdmin = async (req, res, next) => {
+      const user = req.user;
+      if (user.role !== "admin") {
+        return res.status(403).json({ message: "forbidden access" });
+      }
+      next();
+    };
+    const isDoctor = async (req, res, next) => {
+      const user = req.user;
+      if (user.role !== "doctor") {
+        return res.status(403).json({ message: "forbidden access" });
+      }
+      next();
+    };
+    const isPatient = async (req, res, next) => {
+      const user = req.user;
+      if (user.role !== "patient") {
+        return res.status(403).json({ message: "forbidden access" });
+      }
+      next();
+    };
 
     // GET REQUESTS
 
     // getting all users
-    app.get("/api/users", async (req, res) => {
+    app.get("/api/users", verifyToken, isAdmin, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.json(result);
     });
 
     // get all doctors
-    app.get("/api/all-doctors", async (req, res) => {
+    app.get("/api/all-doctors", verifyToken, async (req, res) => {
       const matchStage = {};
 
       if (req.query.specialization) {
@@ -107,41 +158,59 @@ async function run() {
     });
 
     // get all doctors for admin
-    app.get("/api/all-doctors/admin", async (req, res) => {
-      const result = await doctorCollection.find().toArray();
-      res.json(result);
-    });
+    app.get(
+      "/api/all-doctors/admin",
+      verifyToken,
+      isAdmin,
+      async (req, res) => {
+        const result = await doctorCollection.find().toArray();
+        res.json(result);
+      },
+    );
 
     // get doctor data by email
-    app.get("/api/doctor", async (req, res) => {
+    app.get("/api/doctor", verifyToken, async (req, res) => {
       const { email } = req.query;
       const result = await doctorCollection.findOne({ doctorEmail: email });
       res.json(result);
     });
 
     // get doctor data by id
-    app.get("/api/doctor/:id", async (req, res) => {
+    app.get("/api/doctor/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
       const result = await doctorCollection.findOne({ _id: new ObjectId(id) });
       res.json(result);
     });
 
     // get all appointments made by individual patient
-    app.get("/api/appointment/self", async (req, res) => {
-      const { patientId } = req.query;
-      const result = await appointmentCollection.find({ patientId }).toArray();
-      res.json(result);
-    });
+    app.get(
+      "/api/appointment/self",
+      verifyToken,
+      isPatient,
+      async (req, res) => {
+        const { patientId } = req.query;
+        if (patientId !== req.user._id.toString()) {
+          return res.status(403).json({ message: "forbidden access" });
+        }
+        const result = await appointmentCollection
+          .find({ patientId })
+          .toArray();
+        res.json(result);
+      },
+    );
 
     // get payments by patient id
-    app.get("/api/payments", async (req, res) => {
+    app.get("/api/payments", verifyToken, isPatient, async (req, res) => {
       const { patientId } = req.query;
+      if (patientId !== req.user._id.toString()) {
+        return res.status(403).json({ message: "forbidden access" });
+      }
       const result = await paymentCollection.find({ patientId }).toArray();
       res.json(result);
     });
 
     // get payment history by id
-    app.get("/api/all-payments", async (req, res) => {
+    app.get("/api/all-payments", verifyToken, isAdmin, async (req, res) => {
       const result = await paymentCollection
         .aggregate([
           {
@@ -178,24 +247,34 @@ async function run() {
     });
 
     // get reviews for specific patient
-    app.get("/api/review", async (req, res) => {
+    app.get("/api/review", verifyToken, isPatient, async (req, res) => {
       const { id } = req.query;
+      if (id !== req.user._id.toString()) {
+        return res.status(403).json({ message: "forbidden access" });
+      }
       const result = await reviewCollection.find({ patientId: id }).toArray();
       res.json(result);
     });
 
     // get all reviews
-    app.get("/api/all-reviews", async (req, res) => {
+    app.get("/api/all-reviews", verifyToken, isAdmin, async (req, res) => {
       const result = await reviewCollection.find().toArray();
       res.json(result);
     });
 
     // get reviews for specific doctor
-    app.get("/api/review/doctor", async (req, res) => {
+    app.get("/api/review/doctor", verifyToken, isDoctor, async (req, res) => {
       const { email } = req.query;
+      if (email !== req.user.email) {
+        return res.status(403).json({ message: "forbidden access" });
+      }
       const getDoctorId = await doctorCollection.findOne({
         doctorEmail: email,
       });
+
+      if (!getDoctorId) {
+        return res.status(404).json({ message: "Doctor not found" });
+      }
       const result = await reviewCollection
         .find({ doctorId: getDoctorId._id.toString() })
         .toArray();
@@ -216,11 +295,18 @@ async function run() {
     });
 
     // get appointments by doctor id
-    app.get("/api/appointment", async (req, res) => {
+    app.get("/api/appointment", verifyToken, isDoctor, async (req, res) => {
       const { email } = req.query;
+      if (email !== req.user.email) {
+        return res.status(403).json({ message: "forbidden access" });
+      }
       const getDoctorId = await doctorCollection.findOne({
         doctorEmail: email,
       });
+
+      if (!getDoctorId) {
+        return res.status(404).json({ message: "Doctor not found" });
+      }
       const result = await appointmentCollection
         .find({ doctorId: getDoctorId._id.toString() })
         .toArray();
@@ -228,17 +314,21 @@ async function run() {
     });
 
     // get all appoitments
-    app.get("/api/appointments", async (req, res) => {
+    app.get("/api/appointments", verifyToken, isAdmin, async (req, res) => {
       const result = await appointmentCollection.find().toArray();
       res.json(result);
     });
 
     // gettign prescription by doctor id
-    app.get("/api/prescription", async (req, res) => {
+    app.get("/api/prescription", verifyToken, isDoctor, async (req, res) => {
       const { email } = req.query;
       const getDoctorId = await doctorCollection.findOne({
         doctorEmail: email,
       });
+
+      if (!getDoctorId) {
+        return res.status(404).json({ message: "Doctor not found" });
+      }
       const result = await prescriptionCollection
         .find({ doctorId: getDoctorId._id.toString() })
         .toArray();
@@ -248,7 +338,7 @@ async function run() {
     // POST REQUESTS
 
     // store doctor data after register
-    app.post("/api/doctors", async (req, res) => {
+    app.post("/api/doctors", verifyToken, isDoctor, async (req, res) => {
       const newData = req.body;
       const doctorData = {
         createdAt: new Date(),
@@ -273,7 +363,7 @@ async function run() {
     });
 
     // creating appointment
-    app.post("/api/appointment", async (req, res) => {
+    app.post("/api/appointment", verifyToken, isPatient, async (req, res) => {
       const data = req.body;
       const isConfirmed = await appointmentCollection.findOne({
         doctorId: data.doctorId,
@@ -289,7 +379,7 @@ async function run() {
     });
 
     // creating payments
-    app.post("/api/payment", async (req, res) => {
+    app.post("/api/payment", verifyToken, isPatient, async (req, res) => {
       const data = req.body;
       const result = await paymentCollection.insertOne(data);
       if (result) {
@@ -310,7 +400,7 @@ async function run() {
     });
 
     // creating review
-    app.post("/api/review/new", async (req, res) => {
+    app.post("/api/review/new", verifyToken, isPatient, async (req, res) => {
       const data = req.body;
       const review = {
         ...data,
@@ -337,33 +427,41 @@ async function run() {
     });
 
     // creating prescription
-    app.post("/api/prescription/new", async (req, res) => {
-      const data = req.body;
-      const review = {
-        ...data,
-        createdAt: new Date(),
-      };
-      const result = await prescriptionCollection.insertOne(review);
-      if (result) {
-        const filter = { _id: new ObjectId(data.appointmentId) };
-        const updatedField = {
-          $set: {
-            appointmentStatus: "completed",
-          },
+    app.post(
+      "/api/prescription/new",
+      verifyToken,
+      isDoctor,
+      async (req, res) => {
+        const data = req.body;
+        const review = {
+          ...data,
+          createdAt: new Date(),
         };
-        const update = await appointmentCollection.updateOne(
-          filter,
-          updatedField,
-        );
-      }
-      res.json(result);
-    });
+        const result = await prescriptionCollection.insertOne(review);
+        if (result) {
+          const filter = { _id: new ObjectId(data.appointmentId) };
+          const updatedField = {
+            $set: {
+              appointmentStatus: "completed",
+            },
+          };
+          const update = await appointmentCollection.updateOne(
+            filter,
+            updatedField,
+          );
+        }
+        res.json(result);
+      },
+    );
 
     // PATCH REQUESTS
 
     // updating user data
-    app.patch("/api/user/profile", async (req, res) => {
+    app.patch("/api/user/profile", verifyToken, isPatient, async (req, res) => {
       const { userId, name, email, image, phone } = req.body;
+      if (userId !== req.user._id.toString()) {
+        return res.status(403).json({ message: "forbidden access" });
+      }
       const filter = { _id: new ObjectId(userId) };
       const updatedData = {
         $set: {
@@ -379,69 +477,85 @@ async function run() {
     });
 
     // edit doctor data
-    app.patch("/api/doctor/profile/edit", async (req, res) => {
-      const newData = req.body;
-      const {
-        qualifications,
-        consultationFee,
-        hospitalName,
-        specialization,
-        phone,
-        bio,
-        experience,
-        availableDays,
-        availableSlots,
-      } = newData;
-      const profileData = {
-        qualifications,
-        consultationFee,
-        hospitalName,
-        specialization,
-        phone,
-        bio,
-        experience,
-      };
-      const scheduleData = {
-        availableDays,
-        availableSlots,
-      };
-      const filter = { doctorEmail: newData.email };
-      let updatedData;
-      if (typeof availableDays !== "undefined") {
-        updatedData = {
-          $set: {
-            ...scheduleData,
-            updatedAt: new Date(),
-          },
+    app.patch(
+      "/api/doctor/profile/edit",
+      verifyToken,
+      isDoctor,
+      async (req, res) => {
+        const newData = req.body;
+        const {
+          qualifications,
+          consultationFee,
+          hospitalName,
+          specialization,
+          phone,
+          bio,
+          experience,
+          availableDays,
+          availableSlots,
+        } = newData;
+        const profileData = {
+          qualifications,
+          consultationFee,
+          hospitalName,
+          specialization,
+          phone,
+          bio,
+          experience,
         };
-      } else {
-        updatedData = {
-          $set: {
-            ...profileData,
-            updatedAt: new Date(),
-          },
+        const scheduleData = {
+          availableDays,
+          availableSlots,
         };
-      }
-      const result = await doctorCollection.updateOne(filter, updatedData);
-      res.json(result);
-    });
+        if (newData.email !== req.user.email) {
+          return res.status(403).json({ message: "forbidden access" });
+        }
+        const filter = { doctorEmail: newData.email };
+        let updatedData;
+        if (typeof availableDays !== "undefined") {
+          updatedData = {
+            $set: {
+              ...scheduleData,
+              updatedAt: new Date(),
+            },
+          };
+        } else {
+          updatedData = {
+            $set: {
+              ...profileData,
+              updatedAt: new Date(),
+            },
+          };
+        }
+        const result = await doctorCollection.updateOne(filter, updatedData);
+        res.json(result);
+      },
+    );
 
     // accepting appointment by doctor
-    app.patch("/api/appointment/accept", async (req, res) => {
-      const { appointmentId } = req.query;
-      const filter = { _id: new ObjectId(appointmentId) };
-      const updatedData = {
-        $set: {
-          appointmentStatus: "confirmed",
-        },
-      };
-      const result = await appointmentCollection.updateOne(filter, updatedData);
-      res.json(result);
-    });
+    app.patch(
+      "/api/appointment/accept",
+      verifyToken,
+      isDoctor,
+      async (req, res) => {
+        const { appointmentId } = req.query;
+        const filter = { _id: new ObjectId(appointmentId) };
+        const updatedData = {
+          $set: {
+            appointmentStatus: "confirmed",
+          },
+        };
+        const result = await appointmentCollection.updateOne(
+          filter,
+          updatedData,
+        );
+        res.json(result);
+      },
+    );
 
     // cancelling appointment
 
-    app.patch("/api/appointment/cancel", async (req, res) => {
+    app.patch("/api/appointment/cancel", verifyToken, async (req, res) => {
       const { appointmentId } = req.query;
       const filter = { _id: new ObjectId(appointmentId) };
       const updatedData = {
@@ -455,21 +569,29 @@ async function run() {
 
     // rescheduling appointment
 
-    app.patch("/api/appointment/reschedule", async (req, res) => {
-      const { appointmentDate, appointmentTime, appointmentId } = req.body;
-      const filter = { _id: new ObjectId(appointmentId) };
-      const updatedData = {
-        $set: {
-          appointmentDate,
-          appointmentTime,
-        },
-      };
-      const result = await appointmentCollection.updateOne(filter, updatedData);
-      res.json(result);
-    });
+    app.patch(
+      "/api/appointment/reschedule",
+      verifyToken,
+      isPatient,
+      async (req, res) => {
+        const { appointmentDate, appointmentTime, appointmentId } = req.body;
+        const filter = { _id: new ObjectId(appointmentId) };
+        const updatedData = {
+          $set: {
+            appointmentDate,
+            appointmentTime,
+          },
+        };
+        const result = await appointmentCollection.updateOne(
+          filter,
+          updatedData,
+        );
+        res.json(result);
+      },
+    );
 
     // editing review
-    app.patch("/api/review/edit", async (req, res) => {
+    app.patch("/api/review/edit", verifyToken, isPatient, async (req, res) => {
       const { rating, reviewText, reviewId } = req.body;
       const filter = { _id: new ObjectId(reviewId) };
       const updatedData = {
@@ -483,25 +605,31 @@ async function run() {
     });
 
     // modify prescription
-    app.patch("/api/prescription/modify", async (req, res) => {
-      const { diagnosis, medications, instructions, prescriptionId } = req.body;
-      const filter = { _id: new ObjectId(prescriptionId) };
-      const updatedField = {
-        $set: {
-          diagnosis,
-          medications,
-          instructions,
-        },
-      };
-      const result = await prescriptionCollection.updateOne(
-        filter,
-        updatedField,
-      );
-      res.json(result);
-    });
+    app.patch(
+      "/api/prescription/modify",
+      verifyToken,
+      isDoctor,
+      async (req, res) => {
+        const { diagnosis, medications, instructions, prescriptionId } =
+          req.body;
+        const filter = { _id: new ObjectId(prescriptionId) };
+        const updatedField = {
+          $set: {
+            diagnosis,
+            medications,
+            instructions,
+          },
+        };
+        const result = await prescriptionCollection.updateOne(
+          filter,
+          updatedField,
+        );
+        res.json(result);
+      },
+    );
 
     // suspend user
-    app.patch("/api/user/suspend", async (req, res) => {
+    app.patch("/api/user/suspend", verifyToken, isAdmin, async (req, res) => {
       const { userId } = req.body;
       const filter = { _id: new ObjectId(userId) };
       const updatedField = {
@@ -514,7 +642,7 @@ async function run() {
     });
 
     // unsuspend user
-    app.patch("/api/user/unsuspend", async (req, res) => {
+    app.patch("/api/user/unsuspend", verifyToken, isAdmin, async (req, res) => {
       const { userId } = req.body;
       const filter = { _id: new ObjectId(userId) };
       const updatedField = {
@@ -527,7 +655,7 @@ async function run() {
     });
 
     // rejecting a doctor
-    app.patch("/api/doctor/reject", async (req, res) => {
+    app.patch("/api/doctor/reject", verifyToken, isAdmin, async (req, res) => {
       const { doctorId } = req.body;
       const filter = { _id: new ObjectId(doctorId) };
       const updatedField = {
@@ -540,7 +668,7 @@ async function run() {
     });
 
     // cancelling a doctor
-    app.patch("/api/doctor/cancel", async (req, res) => {
+    app.patch("/api/doctor/cancel", verifyToken, isAdmin, async (req, res) => {
       const { doctorId } = req.body;
       const filter = { _id: new ObjectId(doctorId) };
       const updatedField = {
@@ -553,7 +681,7 @@ async function run() {
     });
 
     // approving a doctor
-    app.patch("/api/doctor/approve", async (req, res) => {
+    app.patch("/api/doctor/approve", verifyToken, isAdmin, async (req, res) => {
       const { doctorId } = req.body;
       const filter = { _id: new ObjectId(doctorId) };
       const updatedField = {
@@ -568,16 +696,21 @@ async function run() {
     // DELETE REQUESTS
 
     // delete review
-    app.delete("/api/review/delete", async (req, res) => {
-      const { reviewId } = req.body;
-      const result = await reviewCollection.deleteOne({
-        _id: new ObjectId(reviewId),
-      });
-      res.json(result);
-    });
+    app.delete(
+      "/api/review/delete",
+      verifyToken,
+      isPatient,
+      async (req, res) => {
+        const { reviewId } = req.body;
+        const result = await reviewCollection.deleteOne({
+          _id: new ObjectId(reviewId),
+        });
+        res.json(result);
+      },
+    );
 
     // delete user
-    app.delete("/api/user/delete", async (req, res) => {
+    app.delete("/api/user/delete", verifyToken, isAdmin, async (req, res) => {
       const { userId, userEmail } = req.body;
       // delete user from doctorCollection if role === doctor
       const findUserInUserCollection = await userCollection.findOne({
