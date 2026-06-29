@@ -88,13 +88,13 @@ async function run() {
     // GET REQUESTS
 
     // getting all users
-    app.get("/api/users", verifyToken, isAdmin, async (req, res) => {
+    app.get("/api/users", async (req, res) => {
       const result = await userCollection.find().toArray();
       res.json(result);
     });
 
     // get all doctors
-    app.get("/api/all-doctors", verifyToken, async (req, res) => {
+    app.get("/api/all-doctors", async (req, res) => {
       const matchStage = {};
 
       if (req.query.specialization) {
@@ -176,7 +176,7 @@ async function run() {
     });
 
     // get doctor data by id
-    app.get("/api/doctor/:id", verifyToken, async (req, res) => {
+    app.get("/api/doctor/:id", async (req, res) => {
       const { id } = req.params;
       const result = await doctorCollection.findOne({ _id: new ObjectId(id) });
       res.json(result);
@@ -257,7 +257,7 @@ async function run() {
     });
 
     // get all reviews
-    app.get("/api/all-reviews", verifyToken, isAdmin, async (req, res) => {
+    app.get("/api/all-reviews", async (req, res) => {
       const result = await reviewCollection.find().toArray();
       res.json(result);
     });
@@ -314,7 +314,7 @@ async function run() {
     });
 
     // get all appoitments
-    app.get("/api/appointments", verifyToken, isAdmin, async (req, res) => {
+    app.get("/api/appointments", async (req, res) => {
       const result = await appointmentCollection.find().toArray();
       res.json(result);
     });
