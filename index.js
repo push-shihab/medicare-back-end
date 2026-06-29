@@ -95,7 +95,7 @@ async function run() {
 
     // get all doctors
     app.get("/api/all-doctors", async (req, res) => {
-      const matchStage = {};
+      const matchStage = { verificationStatus: "approved" };
 
       if (req.query.specialization) {
         matchStage.specialization = req.query.specialization;
@@ -112,9 +112,30 @@ async function run() {
         { $match: matchStage },
         {
           $addFields: {
-            consultationFeeNum: { $toDouble: "$consultationFee" },
-            experienceNum: { $toDouble: "$experience" },
-            ratingNum: { $toDouble: "$rating" },
+            consultationFeeNum: {
+              $convert: {
+                input: "$consultationFee",
+                to: "double",
+                onError: 0,
+                onNull: 0,
+              },
+            },
+            experienceNum: {
+              $convert: {
+                input: "$experience",
+                to: "double",
+                onError: 0,
+                onNull: 0,
+              },
+            },
+            ratingNum: {
+              $convert: {
+                input: "$rating",
+                to: "double",
+                onError: 0,
+                onNull: 0,
+              },
+            },
           },
         },
       ];
@@ -138,23 +159,29 @@ async function run() {
       if (Object.keys(sortStage).length > 0) {
         pipeline.push({ $sort: sortStage });
       }
+      console.log("matchStage:", JSON.stringify(matchStage));
+      console.log("pipeline:", JSON.stringify(pipeline));
 
-      // pagination
-      if (req.query.page) {
-        const page = req.query.page;
-        const itemsPerPage = req.query.itemsPerPage || 12;
-        const skipPage = (page - 1) * itemsPerPage;
-        const totalDoctor = await doctorCollection.countDocuments(matchStage);
-        const paginationResult = await doctorCollection
-          .aggregate(pipeline)
-          .skip(skipPage)
-          .limit(itemsPerPage)
-          .toArray();
-        return res.json({ paginationResult, totalDoctor });
+      try {
+        if (req.query.page) {
+          const page = Number(req.query.page);
+          const itemsPerPage = Number(req.query.itemsPerPage) || 8;
+          const skipPage = (page - 1) * itemsPerPage;
+          const totalDoctor = await doctorCollection.countDocuments(matchStage);
+          const paginationResult = await doctorCollection
+            .aggregate(pipeline)
+            .skip(skipPage)
+            .limit(itemsPerPage)
+            .toArray();
+          return res.json({ paginationResult, totalDoctor });
+        }
+
+        const result = await doctorCollection.aggregate(pipeline).toArray();
+        res.json(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
       }
-
-      const result = await doctorCollection.aggregate(pipeline).toArray();
-      res.json(result);
     });
 
     // get all doctors for admin
@@ -247,11 +274,8 @@ async function run() {
     });
 
     // get reviews for specific patient
-    app.get("/api/review", verifyToken, isPatient, async (req, res) => {
+    app.get("/api/review", async (req, res) => {
       const { id } = req.query;
-      if (id !== req.user._id.toString()) {
-        return res.status(403).json({ message: "forbidden access" });
-      }
       const result = await reviewCollection.find({ patientId: id }).toArray();
       res.json(result);
     });
@@ -263,11 +287,8 @@ async function run() {
     });
 
     // get reviews for specific doctor
-    app.get("/api/review/doctor", verifyToken, isDoctor, async (req, res) => {
+    app.get("/api/review/doctor", async (req, res) => {
       const { email } = req.query;
-      if (email !== req.user.email) {
-        return res.status(403).json({ message: "forbidden access" });
-      }
       const getDoctorId = await doctorCollection.findOne({
         doctorEmail: email,
       });
@@ -279,8 +300,10 @@ async function run() {
         .find({ doctorId: getDoctorId._id.toString() })
         .toArray();
       const avgRatingInReview =
-        result.reduce((acc, review) => acc + Number(review.rating), 0) /
-        result.length;
+        result.length > 0
+          ? result.reduce((acc, review) => acc + Number(review.rating), 0) /
+            result.length
+          : 0;
       const filter = { _id: getDoctorId._id };
       const updatedField = {
         $set: {
